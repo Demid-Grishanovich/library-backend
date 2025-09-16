@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -27,27 +28,43 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+                // CORS включен (бин corsConfigurationSource в CorsConfig)
+                .cors(Customizer.withDefaults())
+                // CSRF не нужен для REST
                 .csrf(csrf -> csrf.disable())
+                // Stateless API
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                // кого пускаем без токена
                 .authorizeHttpRequests(auth -> auth
-                        // Swagger
-                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        // preflight-запросы браузера
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
-                        // ПУБЛИЧНАЯ аутентификация (и старый, и новый префикс)
-                        .requestMatchers("/auth/**").permitAll()
-                        .requestMatchers("/api/auth/**").permitAll()
+                        // Swagger / OpenAPI
+                        .requestMatchers(
+                                "/swagger-ui/**",
+                                "/v3/api-docs/**",
+                                "/swagger-ui.html"
+                        ).permitAll()
 
-                        // Публичные редиректы/проверки по QR-ссылкам (если нужны без токена)
-                        .requestMatchers(HttpMethod.GET, "/l/**", "/api/books/qr/**", "/api/qr/**").permitAll()
+                        // health/info (если нужно для мониторинга)
+                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
 
-                        // (НЕОБЯЗАТЕЛЬНО для удобства тестов) разрешить GET книг без токена
-                        // УБЕРИ ЭТУ СТРОКУ на проде, если доступ должен быть только авторизованным
-                        .requestMatchers(HttpMethod.GET, "/api/books/**").permitAll()
+                        // публичная аутентификация
+                        .requestMatchers("/auth/**", "/api/auth/**").permitAll()
 
-                        // Остальное — только с JWT
+                        // публичные GET (оставил как было у тебя)
+                        .requestMatchers(HttpMethod.GET,
+                                "/l/**",
+                                "/api/books/qr/**",
+                                "/api/qr/**",
+                                "/api/books/**"
+                        ).permitAll()
+
+                        // остальное — только с JWT
                         .anyRequest().authenticated()
                 );
 
+        // Важно: JWT фильтр до UsernamePasswordAuthenticationFilter
         http.addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
